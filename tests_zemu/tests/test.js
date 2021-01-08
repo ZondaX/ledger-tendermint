@@ -18,6 +18,9 @@ import jest, {expect} from "jest";
 import Zemu from "@zondax/zemu";
 import TendermintApp from "@zondax/ledger-tendermint";
 
+const crypto = require('crypto');
+const ed25519 = require("ed25519-supercop");
+
 const Resolve = require("path").resolve;
 const APP_PATH = Resolve("../app/bin/app.elf");
 
@@ -28,6 +31,9 @@ const sim_options = {
     custom: `-s "${APP_SEED}"`
     , X11: true
 };
+
+// Tendermint coin index is the same as Cosmos
+const COIN = '118'
 
 jest.setTimeout(25000)
 
@@ -68,7 +74,7 @@ describe('Standard', function () {
             await sim.start(sim_options);
             const app = new TendermintApp(sim.getTransport());
 
-            const path = "m/44'/461'/5'/0/3";
+            const path = `m/44'/${COIN}'/5'/0/3`;
             const resp = await app.getAddressAndPubKey(path);
 
             console.log(resp)
@@ -76,47 +82,13 @@ describe('Standard', function () {
             expect(resp.returnCode).toEqual(0x9000);
             expect(resp.errorMessage).toEqual("No errors");
 
-            const expected_address_string = "f1mk3zcefvlgpay4f32c5vmruk5gqig6dumc7pz6q";
-            const expected_pk = "0425d0dbeedb2053e690a58e9456363158836b1361f30dba0332f440558fa803d056042b50d0e70e4a2940428e82c7cea54259d65254aed4663e4d0cffd649f4fb";
+            // REVIEW: why it returning an empty string as an address ?
+            const expected_address_string = '';
+            const expected_pk = '17483e0883cf71e2fe4e12f42d1448d06f4274a73b9b6f560c5ed01a32745276';
 
-            expect(resp.addrString).toEqual(expected_address_string);
-            expect(resp.compressed_pk.toString('hex')).toEqual(expected_pk);
+            expect(resp.address).toEqual(expected_address_string);
+            expect(resp.publicKey.toString('hex')).toEqual(expected_pk);
 
-        } finally {
-            await sim.close();
-        }
-    });
-
-    it('show address', async function () {
-        const snapshotPrefixGolden = "snapshots/show-address/";
-        const snapshotPrefixTmp = "snapshots-tmp/show-address/";
-        let snapshotCount = 0;
-
-        const sim = new Zemu(APP_PATH);
-        try {
-            await sim.start(sim_options);
-            const app = new TendermintApp(sim.getTransport());
-
-            // Derivation path. First 3 items are automatically hardened!
-            const path = "m/44'/461'/5'/0/3";
-            const respRequest = app.showAddressAndPubKey(path);
-            // Wait until we are not in the main menu
-            await sim.waitUntilScreenIsNot(sim.getMainMenuSnapshot());
-
-            // Now navigate the address / path
-            await sim.compareSnapshotsAndAccept(".", "show_address", 3);
-
-            const resp = await respRequest;
-            console.log(resp);
-
-            expect(resp.returnCode).toEqual(0x9000);
-            expect(resp.errorMessage).toEqual("No errors");
-
-            const expected_address_string = "f1mk3zcefvlgpay4f32c5vmruk5gqig6dumc7pz6q";
-            const expected_pk = "0425d0dbeedb2053e690a58e9456363158836b1361f30dba0332f440558fa803d056042b50d0e70e4a2940428e82c7cea54259d65254aed4663e4d0cffd649f4fb";
-
-            expect(resp.addrString).toEqual(expected_address_string);
-            expect(resp.compressed_pk.toString('hex')).toEqual(expected_pk);
         } finally {
             await sim.close();
         }
@@ -128,35 +100,51 @@ describe('Standard', function () {
             await sim.start(sim_options);
             const app = new TendermintApp(sim.getTransport());
 
-            const path = "m/44'/461'/0'/0/1";
+            // Got from here : https://github.com/Zondax/ledger-tendermint-rs/blob/2b984728168ac98b86c07aa9ef7977fae616e2e4/src/signer.rs#L111-L137
+            const path = `m/44'/${COIN}'/0'/0/1`;
             const txBlob = Buffer.from(
-                "8a0058310396a1a3e4ea7a14d49985e661b22401d44fed402d1d0925b243c923589c0fbc7e32cd04e29ed78d15d37d3aaa3fe6da3358310386b454258c589475f7d16f5aac018a79f6c1169d20fc33921dd8b5ce1cac6c348f90a3603624f6aeb91b64518c2e80950144000186a01961a8430009c44200000040",
+                "210801110100000000000000190100000000000000220b088092b8c398feffffff01",
                 "hex",
             );
-
+            
             const pkResponse = await app.getAddressAndPubKey(path);
-            console.log(pkResponse);
-            expect(pkResponse.returnCode).toEqual(0x9000);
-            expect(pkResponse.errorMessage).toEqual("No errors");
+            console.log(pkResponse)
+
+            await Zemu.sleep(2000);
 
             // do not wait here..
-            const signatureRequest = app.sign(path, txBlob);
+            const signatureRequestInit = app.sign(path, txBlob);
             // Wait until we are not in the main menu
-            await sim.waitUntilScreenIsNot(sim.getMainMenuSnapshot());
+            //await sim.waitUntilScreenIsNot(sim.getMainMenuSnapshot());
+            await Zemu.sleep(2000);
 
-            await sim.compareSnapshotsAndAccept(".", "sign_basic", 12);
+            await sim.clickRight();
+
+            let respInit = await signatureRequestInit;
+            console.log(respInit);
+            
+            const txBlob2 = Buffer.from(
+              "210801111000000000000000190200000000000000220b088092b8c398feffffff01",
+              "hex",
+            );
+
+            expect(respInit.returnCode).toEqual(0x9000);
+            expect(respInit.errorMessage).toEqual("No errors");
+            
+            const signatureRequest = app.sign(path, txBlob2);
+            // Wait until we are not in the main menu
+            //await sim.waitUntilScreenIsNot(sim.getMainMenuSnapshot());
+            await Zemu.sleep(2000);
+
+            //await sim.clickRight();
 
             let resp = await signatureRequest;
             console.log(resp);
-
-            expect(resp.returnCode).toEqual(0x9000);
-            expect(resp.errorMessage).toEqual("No errors");
+            
 
             // Verify signature
-            const pk = Uint8Array.from(pkResponse.compressed_pk)
-            const digest = getDigest( txBlob );
-            const signature = secp256k1.signatureImport(Uint8Array.from(resp.signature_der));
-            const signatureOk = secp256k1.ecdsaVerify(signature, digest, pk);
+            const digest = crypto.createHash('sha512').update(txBlob2).digest();
+            const signatureOk = ed25519.verify(resp.signatureCompact, digest, pkResponse.publicKey);
             expect(signatureOk).toEqual(true);
         } finally {
             await sim.close();

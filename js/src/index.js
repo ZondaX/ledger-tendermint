@@ -17,13 +17,15 @@
 
 import {CLA, INS, PKLEN,} from "./coin";
 import {CHUNK_SIZE, ERROR_CODE, getVersion, signSendChunk,} from "./common";
-import {errorCodeToString, P1_VALUES, processErrorResponse, serializePath} from "@zondax/ledger";
+import {errorCodeToString, P1_VALUES, processErrorResponse, serializePath,} from "@zondax/ledger";
 
 function processGetAddrResponse(response) {
   let partialResponse = response;
 
   const errorCodeData = partialResponse.slice(-2);
   const returnCode = errorCodeData[0] * 256 + errorCodeData[1];
+
+  console.log(PKLEN)
 
   const publicKey = Buffer.from(partialResponse.slice(0, PKLEN));
   partialResponse = partialResponse.slice(PKLEN);
@@ -133,7 +135,6 @@ export default class TendermintApp {
 
   async getAddressAndPubKey(path) {
     const serializedPath = serializePath(path);
-    console.log(serializedPath);
 
     return this.transport
       .send(CLA, INS.GET_PUBKEY, P1_VALUES.ONLY_RETRIEVE, 0, serializedPath, [0x9000])
@@ -154,12 +155,12 @@ export default class TendermintApp {
 
   async sign(path, message) {
     return this.signGetChunks(path, message).then((chunks) => {
+      console.log(chunks[0])
       return this.signSendChunk(1, chunks.length, chunks[0]).then(async (response) => {
         let result = {
           returnCode: response.returnCode,
           errorMessage: response.errorMessage,
           signatureCompact: null,
-          signatureDER: null,
         };
 
         for (let i = 1; i < chunks.length; i += 1) {
@@ -175,7 +176,6 @@ export default class TendermintApp {
           errorMessage: result.errorMessage,
           // ///
           signatureCompact: result.signatureCompact,
-          signatureDER: result.signatureDER,
         };
       }, processErrorResponse);
     }, processErrorResponse);
